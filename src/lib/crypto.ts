@@ -1,65 +1,40 @@
-import { showToast } from '@/components/ToastContainer';
+const HOSPITAL_KEY_SECRET = 'surgibook-shared-hospital-key-2026-v2';
 
-export function encryptData(data: string, key: string): string {
-  const encoder = new TextEncoder();
-  const dataBytes = encoder.encode(data);
-  const keyBytes = encoder.encode(key);
-  const result = new Uint8Array(dataBytes.length);
-  for (let i = 0; i < dataBytes.length; i++) {
-    result[i] = dataBytes[i] ^ keyBytes[i % keyBytes.length];
-  }
-  return btoa(String.fromCharCode(...result));
-}
-
-export function decryptData(encrypted: string, key: string): string {
-  const decoder = new TextDecoder();
-  const keyBytes = new TextEncoder().encode(key);
-  const dataBytes = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
-  const result = new Uint8Array(dataBytes.length);
-  for (let i = 0; i < dataBytes.length; i++) {
-    result[i] = dataBytes[i] ^ keyBytes[i % keyBytes.length];
-  }
-  return decoder.decode(result);
-}
-
-export async function encryptDataAsync(data: string, key: string): Promise<string> {
+async function getKey(): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(key.padEnd(32, '0').slice(0, 32)),
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt']
+    'raw', encoder.encode(HOSPITAL_KEY_SECRET), 'PBKDF2', false, ['deriveKey']
   );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: encoder.encode('surgibook-salt-fixed'), iterations: 100000, hash: 'SHA-256' },
+    keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+  );
+}
+
+export async function encryptData(plaintext: string): Promise<string> {
+  const key = await getKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    keyMaterial,
-    encoder.encode(data)
+  const encoder = new TextEncoder();
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv }, key, encoder.encode(plaintext)
   );
-  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
   combined.set(iv);
-  combined.set(new Uint8Array(encrypted), iv.length);
+  combined.set(new Uint8Array(ciphertext), iv.length);
   return btoa(String.fromCharCode(...combined));
 }
 
-export async function decryptDataAsync(encrypted: string, key: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-  const data = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
-  const iv = data.slice(0, 12);
-  const ciphertext = data.slice(12);
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(key.padEnd(32, '0').slice(0, 32)),
-    { name: 'AES-GCM' },
-    false,
-    ['decrypt']
-  );
-  const decrypted = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
-    keyMaterial,
-    ciphertext
-  );
-  return decoder.decode(decrypted);
+export async function decryptData(encrypted: string): Promise<string> {
+  try {
+    const key = await getKey();
+    const combined = new Uint8Array(atob(encrypted).split('').map(c => c.charCodeAt(0)));
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv }, key, ciphertext
+    );
+    return new TextDecoder().decode(decrypted);
+  } catch {
+    throw new Error('Decryption failed - data may be from an older version');
+  }
 }

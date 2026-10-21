@@ -1,60 +1,45 @@
-import type { StorageCase } from './storage';
+import type { SurgeryCase } from '@/types';
+import { sanitizeCsvField } from './validation';
+import { formatDateTime, formatWaitTimeVerbose, getPriorityLabel, getAsaDisplay } from './utils';
 
-export function exportCasesToCSV(cases: StorageCase[]): string {
+export function exportCasesToCsv(cases: SurgeryCase[]): string {
   const headers = [
-    'ID',
-    'Patient Name',
-    'Age',
-    'Hospital Number',
-    'Priority',
-    'ASA',
-    'Procedure',
-    'Surgeon',
-    'Anaesthetist',
-    'Ward',
-    'Status',
-    'Booked At',
-    'Completed At',
-    'Notes',
-    'Allergies',
-    'Comorbidities',
+    'Priority','Status','PMI','First Name','Surname','Age','Age Unit','Weight (kg)',
+    'Ward','Post-Op Ward','Procedure','Indication','Discipline','Surgeon','Surgeon Contact',
+    'Booked At','Booked By','In Progress At','Completed At','Notes',
+    'ASA Grade','Allergies','Comorbidities','NPO Status','Consent','Blood Required',
+    'Theatre Arrival','Procedure Start','Procedure End','Anaesthetist','Assistant Surgeon',
+    'Delay Reason','Wait Time',
   ];
 
-  const rows = cases.map(c => [
-    c.id,
-    c.patientName,
-    c.patientAge,
-    c.hospitalNumber,
-    c.priority,
-    c.asa,
-    c.procedure,
-    c.surgeon,
-    c.anaesthetist,
-    c.ward,
-    c.status,
-    c.bookedAt,
-    c.completedAt || '',
-    c.notes || '',
-    c.allergies || '',
-    c.comorbidities || '',
-  ]);
+  const rows = cases.map(c => {
+    const waitMin = c.bookedAt && c.completedAt
+      ? Math.round((new Date(c.completedAt).getTime() - new Date(c.bookedAt).getTime()) / 60000)
+      : 0;
+    const td = c.theatreDetails;
+    return [
+      getPriorityLabel(c.priority), c.status, c.pmi, c.patientName, c.patientSurname,
+      String(c.age), c.ageUnit || 'years', String(c.weight || ''),
+      c.ward, c.postOpWard || '', c.procedure, c.indication, c.discipline,
+      c.surgeonName, c.surgeonContact, formatDateTime(c.bookedAt), c.bookedBy,
+      formatDateTime(c.inProgressAt), formatDateTime(c.completedAt), c.notes || '',
+      c.asaGrade ? getAsaDisplay(c.asaGrade) : '', c.allergies || '', c.comorbidities || '',
+      c.npoStatus || '', c.consentObtained ? (c.consentType || 'yes') : 'no',
+      c.bloodRequired ? 'yes' : 'no', formatDateTime(td?.arrivalTime),
+      formatDateTime(td?.procedureStartTime), formatDateTime(td?.procedureEndTime),
+      td?.anaesthetistName || '', td?.assistantSurgeonName || '',
+      td?.reasonForDelay || '', waitMin > 0 ? formatWaitTimeVerbose(waitMin) : '',
+    ].map(sanitizeCsvField);
+  });
 
-  const escape = (v: string | number) => {
-    const s = String(v).replace(/"/g, '""');
-    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s}"` : s;
-  };
-
-  return [headers.join(','), ...rows.map(r => r.map(escape).join(','))].join('\n');
+  return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
 }
 
-export function downloadCSV(content: string, filename: string): void {
+export function downloadCsv(content: string, filename: string): void {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }

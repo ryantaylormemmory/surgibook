@@ -1,24 +1,21 @@
-import type { AuditLog } from '@/types';
+import type { AuditEntry } from '@/types';
 
 const AUDIT_KEY = 'surgibook_audit';
-const MAX_AUDIT = 500;
+const MAX_ENTRIES = 500;
 
-export function logAudit(action: string, userName: string, userRole: string, details?: string, caseId?: string): void {
-  const logs = getAuditLogs();
-  logs.unshift({
-    id: crypto.randomUUID(),
-    action,
-    userName,
-    userRole,
-    timestamp: new Date().toISOString(),
-    details,
-    caseId,
-  });
-  if (logs.length > MAX_AUDIT) logs.length = MAX_AUDIT;
-  localStorage.setItem(AUDIT_KEY, JSON.stringify(logs));
+export function logAudit(action: string, details: Record<string, unknown>): void {
+  try {
+    const user = JSON.parse(localStorage.getItem('surgibook_session') || '{}')?.user?.name || 'Unknown';
+    const entries = getAuditLogs();
+    entries.unshift({ action, details, timestamp: new Date().toISOString(), user });
+    if (entries.length > MAX_ENTRIES) entries.length = MAX_ENTRIES;
+    localStorage.setItem(AUDIT_KEY, JSON.stringify(entries));
+  } catch {
+    // silent
+  }
 }
 
-export function getAuditLogs(): AuditLog[] {
+export function getAuditLogs(): AuditEntry[] {
   try {
     return JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]');
   } catch {
