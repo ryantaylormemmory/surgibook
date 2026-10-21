@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { getChatMessages, sendChatMessage } from '@/lib/storage';
 import { getCurrentUser } from '@/lib/auth';
 import { formatRelativeTime } from '@/lib/utils';
